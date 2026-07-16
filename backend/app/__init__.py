@@ -1,0 +1,1 @@
+"""Fire Machine FastAPI backend."""

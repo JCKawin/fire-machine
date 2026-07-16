@@ -1,0 +1,152 @@
+# Fire Machine stack
+# Architecture:
+#   IoT devices (sensors / servo / water pump) --WiFi--> Rust microservice
+#   Rust --> InfluxDB
+#   Python FastAPI (AI model) <--> InfluxDB
+#   React App --> Python FastAPI
+#   Grafana --> InfluxDB
+#
+# Edge hardware (emmbedded/) is not containerized — it talks to `rust` over the network.
+
+services:
+  # ---------------------------------------------------------------------------
+  # Time-series database (shared by Rust, FastAPI, Grafana)
+  # ---------------------------------------------------------------------------
+  influxdb:
+    image: influxdb:2.7
+    container_name: fire-influxdb
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD:-adminfiremachine}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG:-fire-machine}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET:-sensors}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:-fire-machine-super-secret-token}
+      DOCKER_INFLUXDB_INIT_RETENTION: 30d
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    networks:
+      - fire-network
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Grafana dashboards (reads from InfluxDB)
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: fire-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # Pre-wire InfluxDB as a datasource (optional; can also add in UI)
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./database/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    networks:
+      - fire-network
+
+  # ---------------------------------------------------------------------------
+  # Rust microservice — IoT ingestion gateway
+  # Receives WiFi traffic from edge devices (sensors, servo, water pump)
+  # and writes time-series data into InfluxDB.
+  # ---------------------------------------------------------------------------
+  # Optional until rust-microservice is ready:
+  #   docker compose --profile iot up --build
+  rust:
+    profiles: ["iot"]
+    build:
+      context: ./rust-microservice
+      dockerfile: Dockerfile
+    container_name: fire-rust
+    restart: unless-stopped
+    ports:
+      # Edge devices should POST / telemetry to this host:port over WiFi
+      - "8081:8081"
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_ORG: ${INFLUX_ORG:-fire-machine}
+      INFLUX_BUCKET: ${INFLUX_BUCKET:-sensors}
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-fire-machine-super-secret-token}
+      LISTEN_ADDR: 0.0.0.0:8081
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    networks:
+      - fire-network
+
+
+  # ---------------------------------------------------------------------------
+  # Python FastAPI + AI model
+  # Business API for the React app; reads/writes InfluxDB; runs AI inference.
+  # ---------------------------------------------------------------------------
+  fastapi:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fire-fastapi
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_ORG: ${INFLUX_ORG:-fire-machine}
+      INFLUX_BUCKET: ${INFLUX_BUCKET:-sensors}
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-fire-machine-super-secret-token}
+      # Optional: path or URL for AI model weights (mount a volume if local)
+      AI_MODEL_PATH: ${AI_MODEL_PATH:-/app/models}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3001}
+    volumes:
+      # Persist / hot-reload model artifacts if you drop them under backend/models
+      - ./backend/models:/app/models
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    networks:
+      - fire-network
+
+  # ---------------------------------------------------------------------------
+  # React frontend — talks to FastAPI
+  # ---------------------------------------------------------------------------
+  react:
+    build:
+      context: ./frontend
+      dockerfile: dockerfile
+      args:
+        # Baked into the client bundle at build time
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    container_name: fire-react
+    restart: unless-stopped
+    ports:
+      # Host 3001 so it does not clash with Grafana on 3000
+      - "3001:80"
+    depends_on:
+      - fastapi
+    networks:
+      - fire-network
+
+networks:
+  fire-network:
+    driver: bridge
+
+volumes:
+  influxdb-data:
+  influxdb-config:
+  grafana-data:

@@ -1,0 +1,40 @@
+# Env & secrets
+.env
+.env.local
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+.npm
+*.log
+
+# Rust (if built locally)
+rust-microservice/target/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Models (keep folder, ignore large binaries)
+backend/models/*
+!backend/models/.gitkeep
+!backend/models/README.md
+
+# Docker
+*.pid

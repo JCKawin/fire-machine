@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB
+    type: influxdb
+    uid: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    isDefault: true
+    jsonData:
+      version: Flux
+      organization: fire-machine
+      defaultBucket: sensors
+      tlsSkipVerify: true
+    secureJsonData:
+      token: fire-machine-super-secret-token
+    editable: true
