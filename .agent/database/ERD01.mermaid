@@ -1,0 +1,393 @@
+erDiagram
+    %% =====================================================
+    %% CORE / MULTI-TENANT
+    %% =====================================================
+    TENANTS {
+        uuid id PK
+        varchar name
+        varchar slug UK
+        jsonb settings
+        boolean is_active
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    USERS {
+        uuid id PK
+        uuid tenant_id FK
+        citext email
+        varchar hashed_password
+        varchar full_name
+        varchar phone
+        user_status status
+        boolean mfa_enabled
+        jsonb preferences
+        timestamptz last_login_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    ROLES {
+        uuid id PK
+        uuid tenant_id FK "nullable for system roles"
+        varchar name
+        text description
+        boolean is_system
+        timestamptz created_at
+    }
+
+    PERMISSIONS {
+        uuid id PK
+        varchar name UK
+        text description
+        varchar resource
+        varchar action
+        timestamptz created_at
+    }
+
+    ROLE_PERMISSIONS {
+        uuid role_id PK,FK
+        uuid permission_id PK,FK
+        timestamptz created_at
+    }
+
+    USER_ROLES {
+        uuid user_id PK,FK
+        uuid role_id PK,FK
+        uuid assigned_by FK
+        timestamptz assigned_at
+    }
+
+    %% =====================================================
+    %% LOCATION HIERARCHY (ltree powered)
+    %% =====================================================
+    BUILDINGS {
+        uuid id PK
+        uuid tenant_id FK
+        varchar name
+        varchar code
+        text address
+        numeric latitude
+        numeric longitude
+        jsonb metadata
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    FLOORS {
+        uuid id PK
+        uuid tenant_id FK
+        uuid building_id FK
+        integer floor_number
+        varchar name
+        jsonb metadata
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    ZONES {
+        uuid id PK
+        uuid tenant_id FK
+        uuid floor_id FK "nullable"
+        uuid parent_zone_id FK "self-ref, nullable"
+        varchar name
+        varchar code
+        varchar zone_type
+        ltree path "maintained by trigger"
+        integer capacity
+        numeric area_sqm
+        jsonb metadata
+        boolean is_active
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    %% =====================================================
+    %% IOT DEVICES & PHYSICAL ASSETS
+    %% =====================================================
+    DEVICES {
+        uuid id PK
+        uuid tenant_id FK
+        uuid zone_id FK
+        varchar serial_number UK
+        varchar name
+        varchar device_type
+        varchar model
+        varchar firmware_version
+        device_status status
+        timestamptz last_seen_at
+        numeric battery_level
+        jsonb config "thresholds, sampling etc"
+        jsonb metadata
+        timestamptz installed_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    EXTINGUISHERS {
+        uuid id PK
+        uuid tenant_id FK
+        uuid zone_id FK
+        extinguisher_type extinguisher_type
+        numeric capacity_kg
+        varchar manufacturer
+        varchar serial_number UK
+        date install_date
+        date expiry_date
+        date last_refill_date
+        timestamptz last_inspected_at
+        uuid last_inspected_by FK
+        extinguisher_status status
+        numeric pressure_reading
+        jsonb metadata
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    %% =====================================================
+    %% ALERT RULES ENGINE
+    %% =====================================================
+    ALERT_RULES {
+        uuid id PK
+        uuid tenant_id FK
+        varchar scope_type "global|zone|device|..."
+        uuid scope_id "polymorphic"
+        varchar name
+        jsonb conditions "array of field/op/value"
+        incident_severity severity
+        integer cooldown_minutes
+        uuid[] notify_roles
+        boolean auto_create_incident
+        integer auto_escalate_after_min
+        boolean is_active
+        uuid created_by FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    %% =====================================================
+    %% INCIDENTS & LIFECYCLE (partitioned)
+    %% =====================================================
+    INCIDENTS {
+        uuid id PK
+        uuid tenant_id FK
+        uuid zone_id FK
+        uuid device_id FK
+        varchar triggered_by
+        uuid rule_id FK
+        incident_severity severity
+        incident_status status
+        varchar title
+        text description
+        jsonb sensor_snapshot
+        timestamptz started_at
+        timestamptz acknowledged_at
+        uuid acknowledged_by FK
+        timestamptz resolved_at
+        uuid resolved_by FK
+        text resolution_notes
+        text[] actions_taken
+        integer response_time_seconds "GENERATED"
+        integer resolution_time_seconds "GENERATED"
+        jsonb metadata
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    INCIDENT_EVENTS {
+        uuid id PK
+        uuid incident_id FK
+        varchar event_type
+        uuid user_id FK
+        jsonb details
+        text notes
+        timestamptz created_at
+    }
+
+    %% =====================================================
+    %% SENSOR AGGREGATES (ETL from Influx, partitioned)
+    %% =====================================================
+    SENSOR_AGGREGATES {
+        uuid id PK
+        uuid tenant_id FK
+        uuid device_id FK
+        timestamptz bucket_start
+        timestamptz bucket_end
+        integer readings_count
+        numeric avg_temperature_c
+        numeric max_temperature_c
+        numeric min_temperature_c
+        numeric avg_smoke_ppm
+        numeric max_smoke_ppm
+        numeric avg_co_ppm
+        integer flame_detected_count
+        integer anomalies_detected
+        jsonb metadata
+        timestamptz created_at
+    }
+
+    %% =====================================================
+    %% NOTIFICATIONS
+    %% =====================================================
+    NOTIFICATIONS {
+        uuid id PK
+        uuid tenant_id FK
+        uuid user_id FK
+        uuid incident_id FK
+        varchar type
+        varchar title
+        text message
+        incident_severity severity
+        notification_channel[] channels
+        notification_status status
+        timestamptz sent_at
+        timestamptz read_at
+        jsonb delivery_details
+        timestamptz created_at
+    }
+
+    USER_NOTIFICATION_PREFS {
+        uuid user_id PK,FK
+        boolean email_enabled
+        boolean sms_enabled
+        boolean push_enabled
+        boolean in_app_enabled
+        incident_severity min_severity
+        jsonb quiet_hours
+        notification_channel[] preferred_channels
+        uuid[] zone_subscriptions
+        timestamptz updated_at
+    }
+
+    NOTIFICATION_TEMPLATES {
+        uuid id PK
+        uuid tenant_id FK
+        varchar type
+        notification_channel channel
+        text title_template
+        text body_template
+        jsonb variables
+        boolean is_active
+        timestamptz created_at
+    }
+
+    %% =====================================================
+    %% MAINTENANCE
+    %% =====================================================
+    MAINTENANCE_SCHEDULES {
+        uuid id PK
+        uuid tenant_id FK
+        varchar target_type "device|extinguisher|zone|building"
+        uuid target_id "polymorphic"
+        varchar title
+        text description
+        varchar frequency
+        timestamptz scheduled_date
+        uuid assigned_to FK
+        maintenance_status status
+        jsonb checklist
+        uuid created_by FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    MAINTENANCE_RECORDS {
+        uuid id PK
+        uuid tenant_id FK
+        uuid schedule_id FK
+        varchar target_type
+        uuid target_id
+        uuid performed_by FK
+        timestamptz performed_at
+        varchar result
+        text notes
+        jsonb checklist_results
+        jsonb attachments
+        date next_due_date
+        timestamptz created_at
+    }
+
+    %% =====================================================
+    %% AUDIT & SYSTEM
+    %% =====================================================
+    AUDIT_LOGS {
+        bigserial id PK
+        uuid tenant_id FK
+        uuid user_id FK
+        varchar action
+        varchar resource_type
+        uuid resource_id
+        jsonb old_data
+        jsonb new_data
+        inet ip_address
+        text user_agent
+        timestamptz created_at
+    }
+
+    SYSTEM_SETTINGS {
+        uuid id PK
+        uuid tenant_id FK
+        varchar key
+        jsonb value
+        text description
+        boolean is_encrypted
+        uuid updated_by FK
+        timestamptz updated_at
+    }
+
+    %% =====================================================
+    %% RELATIONSHIPS
+    %% =====================================================
+
+    %% Multi-tenant core
+    TENANTS ||--o{ USERS : "has"
+    TENANTS ||--o{ ROLES : "has"
+    TENANTS ||--o{ BUILDINGS : "has"
+    TENANTS ||--o{ DEVICES : "owns"
+    TENANTS ||--o{ EXTINGUISHERS : "owns"
+    TENANTS ||--o{ ALERT_RULES : "has"
+    TENANTS ||--o{ INCIDENTS : "has"
+    TENANTS ||--o{ SENSOR_AGGREGATES : "has"
+    TENANTS ||--o{ NOTIFICATIONS : "has"
+    TENANTS ||--o{ NOTIFICATION_TEMPLATES : "has"
+    TENANTS ||--o{ MAINTENANCE_SCHEDULES : "has"
+    TENANTS ||--o{ MAINTENANCE_RECORDS : "has"
+    TENANTS ||--o{ AUDIT_LOGS : "has"
+    TENANTS ||--o{ SYSTEM_SETTINGS : "has"
+
+    %% RBAC
+    USERS ||--o{ USER_ROLES : "has"
+    ROLES ||--o{ USER_ROLES : "assigned_to"
+    ROLES ||--o{ ROLE_PERMISSIONS : "has"
+    PERMISSIONS ||--o{ ROLE_PERMISSIONS : "granted_to"
+    USERS ||--o| USER_NOTIFICATION_PREFS : "has"
+    USERS ||--o{ NOTIFICATIONS : "receives"
+    USERS ||--o{ INCIDENT_EVENTS : "performs"
+    USERS ||--o{ MAINTENANCE_RECORDS : "performs"
+    USERS ||--o{ AUDIT_LOGS : "performs"
+    USERS ||--o{ EXTINGUISHERS : "last_inspected_by"
+    USERS ||--o{ ALERT_RULES : "created_by"
+    USERS ||--o{ INCIDENTS : "acknowledged_by / resolved_by"
+    USERS ||--o{ MAINTENANCE_SCHEDULES : "assigned_to / created_by"
+    USERS ||--o{ SYSTEM_SETTINGS : "updated_by"
+    USERS ||--o{ USER_ROLES : "assigned_by"
+
+    %% Location hierarchy
+    BUILDINGS ||--o{ FLOORS : "contains"
+    FLOORS ||--o{ ZONES : "contains"
+    ZONES ||--o{ ZONES : "parent of (self)"
+    ZONES ||--o{ DEVICES : "hosts"
+    ZONES ||--o{ EXTINGUISHERS : "hosts"
+    ZONES ||--o{ INCIDENTS : "location_of"
+
+    %% Devices & Sensors
+    DEVICES ||--o{ SENSOR_AGGREGATES : "has"
+    DEVICES ||--o{ INCIDENTS : "triggered_by"
+
+    %% Incidents
+    ALERT_RULES ||--o{ INCIDENTS : "triggers"
+    INCIDENTS ||--o{ INCIDENT_EVENTS : "has timeline"
+    INCIDENTS ||--o{ NOTIFICATIONS : "generates"
+
+    %% Maintenance
+    MAINTENANCE_SCHEDULES ||--o{ MAINTENANCE_RECORDS : "results_in"

@@ -1,0 +1,87 @@
+erDiagram
+    USERS {
+        uuid id PK
+        varchar email UK
+        varchar hashed_password
+        varchar full_name
+        user_role role
+        boolean is_active
+        timestamptz last_login_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    DEVICES {
+        uuid id PK
+        varchar name
+        varchar serial_number UK
+        device_status status
+        varchar location
+        numeric battery_level
+        timestamptz last_seen_at
+        jsonb config
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    INCIDENTS {
+        uuid id PK
+        uuid device_id FK
+        incident_severity severity
+        incident_status status
+        varchar title
+        text description
+        jsonb sensor_snapshot
+        timestamptz started_at
+        timestamptz acknowledged_at
+        uuid acknowledged_by FK
+        timestamptz resolved_at
+        uuid resolved_by FK
+        text resolution_notes
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    NOTIFICATIONS {
+        uuid id PK
+        uuid user_id FK
+        uuid incident_id FK
+        varchar title
+        text message
+        boolean is_read
+        timestamptz created_at
+    }
+
+    SENSOR_SUMMARIES {
+        uuid id PK
+        uuid device_id FK
+        timestamptz bucket_start
+        timestamptz bucket_end
+        integer readings_count
+        numeric avg_temperature_c
+        numeric max_temperature_c
+        numeric min_temperature_c
+        numeric avg_smoke_ppm
+        numeric max_smoke_ppm
+        numeric avg_co_ppm
+        integer flame_detected_count
+        timestamptz created_at
+    }
+
+    REFRESH_TOKENS {
+        uuid id PK
+        uuid user_id FK
+        varchar token UK
+        timestamptz expires_at
+        timestamptz created_at
+    }
+
+    %% Relationships
+    USERS ||--o{ INCIDENTS : "acknowledges / resolves"
+    USERS ||--o{ NOTIFICATIONS : "receives"
+    USERS ||--o{ REFRESH_TOKENS : "has"
+
+    DEVICES ||--o{ INCIDENTS : "triggers"
+    DEVICES ||--o{ SENSOR_SUMMARIES : "has"
+
+    INCIDENTS ||--o{ NOTIFICATIONS : "generates"
