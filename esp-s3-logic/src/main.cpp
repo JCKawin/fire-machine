@@ -1,152 +1,290 @@
-// #include <WiFi.h>
-// #include <WebServer.h>
-//
-// // Replace with your actual network credentials
-// const char* ssid = "JCKAWIN";
-// const char* password = "12345678";
-//
-// // Start the web server on port 80 (HTTP standard)
-// WebServer server(80);
-//
-// // Your HTML page, stored inside raw literal string R"=====( ... )====="
-// const char HTML_CONTENT[] PROGMEM = R"=====(
-// <!DOCTYPE html>
-// <html lang="en">
-// <head>
-//     <meta charset="UTF-8">
-//     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-//     <title>ESP32-S3 Web Server</title>
-//     <style>
-//         body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; background-color: #f4f4f9; }
-//         h1 { color: #333; }
-//         p { color: #666; font-size: 1.2rem; }
-//         .card { background: white; padding: 20px; display: inline-block; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-//     </style>
-// </head>
-// <body>
-//     <div class="card">
-//         <h1>Hello from ESP32-S3!</h1>
-//         <p>Your local HTML file is successfully hosted.</p>
-//     </div>
-// </body>
-// </html>
-// )=====";
-//
-// // Function that handles the root URL path "/"
-// void handleRoot() {
-//     server.send(200, "text/html", HTML_CONTENT);
-// }
-//
-// // Function to handle 404 Not Found errors
-// void handleNotFound() {
-//     server.send(404, "text/plain", "404: Not Found");
-// }
-//
-// void setup() {
-//     Serial.begin(115200);
-//
-//     // Connect to Wi-Fi
-//     WiFi.begin(ssid, password);
-//     Serial.print("Connecting to Wi-Fi");
-//     while (WiFi.status() != WL_CONNECTED) {
-//         delay(500);
-//         Serial.print(".");
-//     }
-//
-//     // Print local IP Address
-//     Serial.println("");
-//     Serial.print("Connected! IP address: ");
-//     Serial.println(WiFi.localIP());
-//
-//     // Define URL routing
-//     server.on("/", handleRoot);
-//     server.onNotFound(handleNotFound);
-//
-//     // Fire up the server
-//     server.begin();
-//     Serial.println("HTTP server started");
-// }
-//
-// void loop() {
-//     // Listen for incoming client connections
-//     server.handleClient();
-// }
 #include <Arduino.h>
-#include <Wire.h>
-#include <U8g2lib.h>
-#include <Adafruit_MLX90614.h>
+#include <ESP32Servo.h>
+#include <DHT.h>
 
-// -------------------- I2C Pins --------------------
-#define SDA_PIN 14
-#define SCL_PIN 12
+// ==========================
+// Pin Definitions
+// ==========================
 
-// -------------------- OLED --------------------
-U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(
-    U8G2_R0,
-    U8X8_PIN_NONE
-);
+// 5-channel flame sensor
+#define FLAME_0 19
+#define FLAME_1 20
+#define FLAME_2 21
+#define FLAME_3 47
+#define FLAME_4 48
 
-// -------------------- MLX90614 --------------------
-Adafruit_MLX90614 mlx = Adafruit_MLX90614();
+const int flamePins[] = {
+    FLAME_0,
+    FLAME_1,
+    FLAME_2,
+    FLAME_3,
+    FLAME_4
+};
 
-void setup() {
+// Servos
+#define SERVO0_PIN 3
+#define SERVO1_PIN 46
+
+// Buzzer
+#define BUZZER_PIN 9
+
+// Motor
+#define MOTOR_PIN 11
+
+// MQ-2
+#define MQ2_ANALOG 13
+#define MQ2_DIGITAL 12
+
+// DHT11
+#define DHT_PIN 14
+#define DHT_TYPE DHT11
+
+
+// ==========================
+// Objects
+// ==========================
+
+Servo servo0;
+Servo servo1;
+
+DHT dht(DHT_PIN, DHT_TYPE);
+
+
+// ==========================
+// Setup
+// ==========================
+
+void setup()
+{
     Serial.begin(115200);
+    delay(2000);
 
-    // Initialize I2C
-    Wire.begin(SDA_PIN, SCL_PIN);
-    Wire.setClock(100000);
+    Serial.println();
+    Serial.println("=================================");
+    Serial.println(" ESP32-S3 SENSOR TEST");
+    Serial.println("=================================");
 
-    // OLED
-    u8g2.begin();
+    // --------------------------
+    // Flame Sensor
+    // --------------------------
 
-    // MLX90614
-    if (!mlx.begin()) {
-        Serial.println("MLX90614 NOT FOUND!");
-
-        u8g2.clearBuffer();
-        u8g2.setFont(u8g2_font_ncenB08_tr);
-        u8g2.drawStr(5, 30, "MLX90614 ERROR!");
-        u8g2.sendBuffer();
-
-        while (1);
+    for (int i = 0; i < 5; i++)
+    {
+        pinMode(flamePins[i], INPUT);
     }
 
-    Serial.println("MLX90614 Ready!");
+    // --------------------------
+    // Buzzer
+    // --------------------------
+
+    pinMode(BUZZER_PIN, OUTPUT);
+    digitalWrite(BUZZER_PIN, LOW);
+
+    // --------------------------
+    // Motor
+    // --------------------------
+
+    pinMode(MOTOR_PIN, OUTPUT);
+    digitalWrite(MOTOR_PIN, LOW);
+
+    // --------------------------
+    // MQ2
+    // --------------------------
+
+    pinMode(MQ2_ANALOG, INPUT);
+    pinMode(MQ2_DIGITAL, INPUT);
+
+    // --------------------------
+    // Servos
+    // --------------------------
+
+    servo0.setPeriodHertz(50);
+    servo1.setPeriodHertz(50);
+
+    servo0.attach(SERVO0_PIN, 500, 2400);
+    servo1.attach(SERVO1_PIN, 500, 2400);
+
+    servo0.write(90);
+    servo1.write(90);
+
+    // --------------------------
+    // DHT11
+    // --------------------------
+
+    dht.begin();
+
+    Serial.println("Initialization complete.");
+    Serial.println();
 }
 
-void loop() {
 
-    static int counter = 0;
+// ==========================
+// Flame Sensor Test
+// ==========================
 
-    float ambient = mlx.readAmbientTempC();
-    float object = mlx.readObjectTempC();
+void testFlameSensors()
+{
+    Serial.println("---- FLAME SENSOR ----");
 
-    // Serial Monitor
-    Serial.print("Ambient: ");
-    Serial.print(ambient);
-    Serial.print(" C\tObject: ");
-    Serial.print(object);
-    Serial.println(" C");
+    for (int i = 0; i < 5; i++)
+    {
+        int value = digitalRead(flamePins[i]);
 
-    // OLED
-    u8g2.clearBuffer();
+        Serial.print("Flame ");
+        Serial.print(i);
+        Serial.print(" (GPIO ");
+        Serial.print(flamePins[i]);
+        Serial.print("): ");
 
-    u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.drawStr(0, 12, "Fire Robot Monitor");
+        Serial.println(value);
+    }
+}
 
-    char buf[20];
 
-    sprintf(buf, "Amb : %.1f C", ambient);
-    u8g2.drawStr(0, 28, buf);
+// ==========================
+// MQ2 Test
+// ==========================
 
-    sprintf(buf, "Obj : %.1f C", object);
-    u8g2.drawStr(0, 44, buf);
+void testMQ2()
+{
+    int analogValue = analogRead(MQ2_ANALOG);
+    int digitalValue = digitalRead(MQ2_DIGITAL);
 
-    sprintf(buf, "Cnt : %d", counter);
-    u8g2.drawStr(0, 60, buf);
+    Serial.println("---- MQ-2 ----");
 
-    u8g2.sendBuffer();
+    Serial.print("Analog GPIO 13: ");
+    Serial.println(analogValue);
 
-    counter++;
+    Serial.print("Digital GPIO 12: ");
+    Serial.println(digitalValue);
+}
+
+
+// ==========================
+// DHT11 Test
+// ==========================
+
+void testDHT11()
+{
+    float humidity = dht.readHumidity();
+    float temperature = dht.readTemperature();
+
+    Serial.println("---- DHT11 ----");
+
+    if (isnan(humidity) || isnan(temperature))
+    {
+        Serial.println("DHT11 ERROR: Failed to read!");
+        return;
+    }
+
+    Serial.print("Temperature: ");
+    Serial.print(temperature);
+    Serial.println(" °C");
+
+    Serial.print("Humidity: ");
+    Serial.print(humidity);
+    Serial.println(" %");
+}
+
+
+// ==========================
+// Servo Test
+// ==========================
+
+void testServos()
+{
+    Serial.println("---- SERVO TEST ----");
+
+    Serial.println("Moving both servos to 0°");
+
+    servo0.write(0);
+    servo1.write(0);
     delay(1000);
+
+    Serial.println("Moving both servos to 90°");
+
+    servo0.write(90);
+    servo1.write(90);
+    delay(1000);
+
+    Serial.println("Moving both servos to 180°");
+
+    servo0.write(180);
+    servo1.write(180);
+    delay(1000);
+
+    Serial.println("Returning to 90°");
+
+    servo0.write(90);
+    servo1.write(90);
+}
+
+
+// ==========================
+// Buzzer Test
+// ==========================
+
+void testBuzzer()
+{
+    Serial.println("---- BUZZER TEST ----");
+
+    // Simple ON/OFF test
+    digitalWrite(BUZZER_PIN, HIGH);
+    delay(300);
+
+    digitalWrite(BUZZER_PIN, LOW);
+    delay(300);
+
+    digitalWrite(BUZZER_PIN, HIGH);
+    delay(300);
+
+    digitalWrite(BUZZER_PIN, LOW);
+}
+
+
+// ==========================
+// Motor Test
+// ==========================
+
+void testMotor()
+{
+    Serial.println("---- MOTOR TEST ----");
+
+    Serial.println("Motor ON");
+
+    digitalWrite(MOTOR_PIN, HIGH);
+    delay(2000);
+
+    Serial.println("Motor OFF");
+
+    digitalWrite(MOTOR_PIN, LOW);
+}
+
+
+// ==========================
+// Main Loop
+// ==========================
+
+void loop()
+{
+    Serial.println();
+    Serial.println("=================================");
+    Serial.println(" SENSOR READINGS");
+    Serial.println("=================================");
+
+    // Sensors
+    testFlameSensors();
+    testMQ2();
+    testDHT11();
+
+    Serial.println();
+
+    // Actuators
+    testServos();
+    testBuzzer();
+    testMotor();
+
+    Serial.println();
+    Serial.println("Waiting 3 seconds...");
+    delay(3000);
 }
